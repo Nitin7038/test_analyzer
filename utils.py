@@ -5,16 +5,32 @@ import pytesseract
 from PIL import Image
 
 def clean_text(text):
-    text = re.sub(r'\s+', ' ', text)
+    # Normalize Windows line endings
+    text = text.replace("\r", "")
+
+    # Remove extra spaces and tabs only
+    text = re.sub(r"[ \t]+", " ", text)
+
+    # Remove excessive blank lines
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
     return text.strip()
 
 def extract_text_from_pdf(file):
     text = ""
+
     with pdfplumber.open(file) as pdf:
         for page in pdf.pages:
-            page_text = page.extract_text()
+
+            page_text = page.extract_text(
+                x_tolerance=2,
+                y_tolerance=2
+            )
+
             if page_text:
-                text += page_text + "\n"
+                text += page_text
+                text += "\n\n"
+
     return text
 
 def extract_text_from_docx(file):

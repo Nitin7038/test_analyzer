@@ -9,6 +9,8 @@ from keywords import extract_keywords
 from qa2 import simple_qa
 from classifier import classify_document
 from Key_insights import extract_key_insights
+from clauses import extract_clauses, summarize_clauses
+from obligations import extract_obligations, group_by_party, count_by_type
 import plotly.express as px
 
 import base64
@@ -33,6 +35,17 @@ def load_model():
     return spacy.load("en_core_web_md")
 
 nlp = load_model()
+
+
+@st.cache_data
+def cached_extract_clauses(text):
+    return extract_clauses(text)
+
+
+@st.cache_data
+def cached_extract_obligations(text):
+    return extract_obligations(text)
+
 
 # -------------------------------
 # UI
@@ -158,8 +171,9 @@ if uploaded_file:
 
 
 
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-        ["📌 Summary", "🏷️ Entities", "🔑 Keywords", "❓ Q&A", "📂 Document Type", "💡 Key Insights"]
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(
+        ["📌 Summary", "🏷️ Entities", "🔑 Keywords", "❓ Q&A", "📂 Document Type", "💡 Key Insights",
+         "⚖️ Clauses", "📋 Obligations & Rights"]
     )
 
     # SUMMARY
@@ -230,6 +244,96 @@ if uploaded_file:
                     st.write(f"• {insight}")
             else:
                 st.info("No major insights detected.")
+
+    # CLAUSE EXTRACTION
+    with tab7:
+        clauses = cached_extract_clauses(text)
+
+        if not clauses:
+            st.info("No legal clauses detected in this document.")
+        else:
+            counts = summarize_clauses(clauses)
+            st.success(f"Found **{len(clauses)}** clauses across **{len(counts)}** types")
+
+            selected = st.multiselect(
+                "Filter by clause type",
+                options=list(counts.keys()),
+                default=list(counts.keys()),
+                format_func=lambda t: f"{t} ({counts[t]})",
+            )
+
+            badge = {"High": "🔴", "Medium": "🟠", "Low": "🟢"}
+
+            for c in clauses:
+                if c["type"] not in selected:
+                    continue
+
+                title = f"{badge[c['importance']]} {c['type']}"
+                if c["heading"]:
+                    title += f" — {c['heading']}"
+
+                with st.expander(title):
+                    st.write(c["text"])
+                    st.caption(
+                        f"Importance: **{c['importance']}** · Match confidence: {c['confidence']:.0%}"
+                    )
+                    if c["key_terms"]:
+                        st.markdown("**Key terms:** " + " · ".join(f"`{t}`" for t in c["key_terms"]))
+                    if c["also"]:
+                        st.caption("Also touches on: " + ", ".join(c["also"]))
+
+    # OBLIGATIONS, RIGHTS & RESPONSIBILITIES
+    with tab8:
+        items = cached_extract_obligations(text)
+
+        if not items:
+            st.info("No obligations, rights or responsibilities detected in this document.")
+        else:
+            type_counts = count_by_type(items)
+            icons = {"Obligation": "📌", "Right": "✅", "Prohibition": "🚫", "Responsibility": "⚠️"}
+
+            cols = st.columns(len(type_counts))
+            for col, (kind, n) in zip(cols, type_counts.items()):
+                col.metric(f"{icons[kind]} {kind}s", n)
+
+            groups = group_by_party(items)
+
+            f1, f2 = st.columns(2)
+            with f1:
+                chosen_types = st.multiselect(
+                    "Filter by type", list(type_counts.keys()), default=list(type_counts.keys())
+                )
+            with f2:
+                chosen_parties = st.multiselect(
+                    "Filter by party", list(groups.keys()), default=list(groups.keys())
+                )
+
+            for party, party_items in groups.items():
+                if party not in chosen_parties:
+                    continue
+
+                shown = [i for i in party_items if i["type"] in chosen_types]
+                if not shown:
+                    continue
+
+                st.markdown(f"### 👤 {party}")
+
+                for kind in type_counts:
+                    of_kind = [i for i in shown if i["type"] == kind]
+                    if not of_kind:
+                        continue
+
+                    st.markdown(f"**{icons[kind]} {kind}s**")
+
+                    for i in of_kind:
+                        line = f"- {i['action'][:1].upper() + i['action'][1:]}"
+                        if i["deadline"]:
+                            line += f" ⏱️ *{i['deadline']}*"
+                        if i["condition"]:
+                            line += f"  \n  _Condition: {i['condition']}_"
+                        if i["section"]:
+                            line += f"  \n  _Section: {i['section']}_"
+                        st.markdown(line)
 
 
 
