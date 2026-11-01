@@ -6,11 +6,12 @@ from utils import *
 from summary import summarize_text
 from entities2 import extract_entities
 from keywords import extract_keywords
-from qa2 import simple_qa
+from qa2 import simple_qa, warm_up
 from classifier import classify_document
 from Key_insights import extract_key_insights
 from clauses import extract_clauses, summarize_clauses
 from obligations import extract_obligations, group_by_party, count_by_type
+from risks import analyze_risks, risk_score, risk_level, count_by_severity
 import plotly.express as px
 
 import base64
@@ -36,6 +37,9 @@ def load_model():
 
 nlp = load_model()
 
+# load the Q&A embedding model in the background so the first question isn't slow
+warm_up()
+
 
 @st.cache_data
 def cached_extract_clauses(text):
@@ -45,6 +49,11 @@ def cached_extract_clauses(text):
 @st.cache_data
 def cached_extract_obligations(text):
     return extract_obligations(text)
+
+
+@st.cache_data
+def cached_analyze_risks(text):
+    return analyze_risks(text)
 
 
 # -------------------------------
@@ -171,9 +180,9 @@ if uploaded_file:
 
 
 
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs(
         ["📌 Summary", "🏷️ Entities", "🔑 Keywords", "❓ Q&A", "📂 Document Type", "💡 Key Insights",
-         "⚖️ Clauses", "📋 Obligations & Rights"]
+         "⚖️ Clauses", "📋 Obligations & Rights", "🚨 Risk Analysis"]
     )
 
     # SUMMARY
@@ -335,7 +344,57 @@ if uploaded_file:
                             line += f"  \n  _Section: {i['section']}_"
                         st.markdown(line)
 
+    # RISK ANALYSIS
+    with tab9:
+        findings = cached_analyze_risks(text)
 
+        if not findings:
+            st.success("No significant legal risks detected.")
+        else:
+            score = risk_score(findings)
+            level = risk_level(score)
+            sev_counts = count_by_severity(findings)
+            sev_badge = {"High": "🔴", "Medium": "🟠", "Low": "🟡"}
+
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Overall risk", f"{score}/100", level, delta_color="off")
+            m2.metric("🔴 High", sev_counts["High"])
+            m3.metric("🟠 Medium", sev_counts["Medium"])
+            m4.metric("🟡 Low", sev_counts["Low"])
+            st.progress(score / 100)
+
+            f1, f2 = st.columns(2)
+            with f1:
+                chosen_sev = st.multiselect(
+                    "Severity", list(sev_counts.keys()), default=list(sev_counts.keys()), key="risk_sev"
+                )
+            with f2:
+                chosen_kind = st.multiselect(
+                    "Finding type",
+                    ["Risky wording", "Missing protection"],
+                    default=["Risky wording", "Missing protection"],
+                    key="risk_kind",
+                )
+
+            for f in findings:
+                if f["severity"] not in chosen_sev or f["kind"] not in chosen_kind:
+                    continue
+
+                title = f"{sev_badge[f['severity']]} {f['title']}"
+                if f["section"]:
+                    title += f" — {f['section']}"
+
+                with st.expander(title):
+                    st.caption(f"{f['severity']} · {f['category']} · {f['kind']}")
+                    if f["excerpt"]:
+                        st.markdown(f"> {f['excerpt']}")
+                    st.markdown(f"**Why it matters:** {f['why']}")
+                    st.markdown(f"**Suggested fix:** {f['recommendation']}")
+
+            st.caption(
+                "Automated keyword-based screening. It can miss risks or flag harmless wording, "
+                "so it is not a substitute for review by a qualified lawyer."
+            )
 
 else:
     st.info("👆 Upload a document to begin analysis")
