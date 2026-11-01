@@ -26,7 +26,7 @@ CLAUSE_TYPES = {
     },
     "Indemnification": {
         "importance": "High",
-        "patterns": [r"indemnif\w+", r"hold harmless", r"defend", r"third[- ]party claims?"],
+        "patterns": [r"indemnif\w+", r"indemnit\w+", r"hold harmless", r"defend", r"third[- ]party claims?"],
     },
     "Limitation of Liability": {
         "importance": "High",
@@ -41,7 +41,7 @@ CLAUSE_TYPES = {
     },
     "Intellectual Property": {
         "importance": "High",
-        "patterns": [r"intellectual property", r"copyright\w*", r"patents?", r"trademarks?",
+        "patterns": [r"intellectual property", r"\bip\b", r"copyright\w*", r"patents?", r"trademarks?",
                      r"licen[sc]e\w*", r"work product", r"work made for hire", r"ownership"],
     },
     "Governing Law": {

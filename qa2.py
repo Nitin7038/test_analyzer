@@ -1,7 +1,33 @@
 # qa_v2.py
-import re, faiss
-from sentence_transformers import SentenceTransformer
-model=SentenceTransformer("all-MiniLM-L6-v2")
+import re, faiss, threading
+
+# sentence_transformers takes ~15s to import and load, so it is not loaded at import time.
+# Call warm_up() at app start to load it in a background thread; if a question arrives
+# before it finishes, model.encode() simply waits for the load to complete.
+_model = None
+_lock = threading.Lock()
+_warming = False
+
+def _load():
+    global _model
+    with _lock:
+        if _model is None:
+            from sentence_transformers import SentenceTransformer
+            _model = SentenceTransformer("all-MiniLM-L6-v2")
+    return _model
+
+def warm_up():
+    """Start loading the model in the background. Safe to call on every Streamlit rerun."""
+    global _warming
+    if _model is None and not _warming:
+        _warming = True
+        threading.Thread(target=_load, daemon=True).start()
+
+class _LazyModel:
+    def encode(self, *args, **kwargs):
+        return _load().encode(*args, **kwargs)
+
+model = _LazyModel()
 HEADING_RE=re.compile(r'^(?:(?:ARTICLE|SECTION|CLAUSE|PART|SCHEDULE|ANNEXURE|APPENDIX|EXHIBIT)\s+[A-Z0-9IVXLC]+|\d+[\.)]?\s+.+)',re.I)
 def parse_blocks(text):
  text=text.replace("\r","");lines=text.split("\n");blocks=[];cur=[];mode=None
