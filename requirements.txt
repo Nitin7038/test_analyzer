@@ -1,0 +1,52 @@
+# AI Document Analyzer - Python dependencies
+# Tested with Python 3.12 (the project's .pyc files are cpython-312).
+#
+# Install:   python -m pip install -r requirements.txt
+# Run:       python -m streamlit run app.py
+
+# --- Web app ---
+streamlit==1.55.0
+plotly==6.6.0                  # imported by app.py
+
+# --- Document reading ---
+pdfplumber==0.11.9             # PDF text extraction (utils.py)
+PyMuPDF==1.28.0                # PDF page preview (imported as "fitz")
+python-docx==1.2.0             # DOCX text extraction (imported as "docx")
+mammoth==1.12.0                # DOCX preview as HTML
+pillow==11.3.0                 # image loading for OCR
+pytesseract==0.3.13            # Python wrapper for OCR - needs the Tesseract program, see below
+
+# --- NLP ---
+spacy==3.8.14
+scikit-learn==1.7.0            # keyword extraction (TF-IDF)
+sentence-transformers==5.1.0   # Q&A embeddings (also installs torch and transformers)
+faiss-cpu==1.14.3              # Q&A similarity search
+numpy==2.3.1
+
+# --- spaCy language models (installed from the spaCy GitHub releases) ---
+# en_core_web_md: used by app.py (summary, entities)
+# en_core_web_sm: used by Key_insights.py
+en_core_web_md @ https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.8.0/en_core_web_md-3.8.0-py3-none-any.whl
+en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+
+# --- Optional: only the unused topic_modeling.py needs these ---
+# pandas==2.3.1
+
+# ---------------------------------------------------------------------------
+# NOT installable with pip - install these separately:
+#
+# 1. Tesseract OCR program (required only to read PNG/JPG images; PDFs and DOCX work without it)
+#      Windows: https://github.com/UB-Mannheim/tesseract/wiki
+#               then add its folder (e.g. C:\Program Files\Tesseract-OCR) to PATH
+#      macOS:   brew install tesseract
+#      Ubuntu:  sudo apt install tesseract-ocr
+#
+# 2. Sentence-transformers model "all-MiniLM-L6-v2" (~90 MB)
+#      Downloaded automatically from Hugging Face the first time Q&A runs,
+#      so the first run needs an internet connection. It is cached afterwards.
+# ---------------------------------------------------------------------------
+
+# For a clean setup elsewhere:
+# python -m venv .venv
+# .venv\Scripts\activate
+# python -m pip install -r requirements.txt
