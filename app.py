@@ -15,6 +15,9 @@ from risks import analyze_risks, risk_score, risk_level, count_by_severity
 import plotly.express as px
 
 import base64
+import html as html_lib
+import re
+from pathlib import Path
 import mammoth
 import fitz  # PyMuPDF
 from PIL import Image
@@ -25,7 +28,13 @@ from preprocessing import preprocess_text
 # -------------------------------
 # CONFIG
 # -------------------------------
-st.set_page_config(page_title="AI Document Analyzer", layout="wide")
+st.set_page_config(page_title="AI Document Analyzer", page_icon="📄", layout="wide")
+
+# styling lives in style.css (presentation only)
+st.markdown(
+    f"<style>{(Path(__file__).parent / 'style.css').read_text(encoding='utf-8')}</style>",
+    unsafe_allow_html=True,
+)
 
 # -------------------------------
 # LOAD NLP MODEL
@@ -59,8 +68,22 @@ def cached_analyze_risks(text):
 # -------------------------------
 # UI
 # -------------------------------
-st.title("📄 AI Document Analyzer")
-st.markdown("Upload a document and get **AI-powered insights** instantly 🚀")
+st.markdown(
+    """
+    <div class="hero">
+        <div class="hero-title">📄 AI Document Analyzer</div>
+        <div class="hero-sub">Upload a contract or document and get clauses, obligations, risks and summaries in seconds.</div>
+        <div class="chips">
+            <span class="chip">⚖️ Clause extraction</span>
+            <span class="chip">📋 Obligations &amp; rights</span>
+            <span class="chip">🚨 Risk analysis</span>
+            <span class="chip">❓ Q&amp;A</span>
+            <span class="chip">🔒 Runs locally</span>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 uploaded_file = st.file_uploader(
     "📂 Upload PDF, DOCX, or Image",
@@ -91,6 +114,18 @@ if uploaded_file:
     # Final normalization
     text = clean_text(text)
 
+    st.markdown(
+        f"""
+        <div class="fileinfo">
+            <span>📎</span>
+            <span class="name">{html_lib.escape(uploaded_file.name)}</span>
+            <span class="tag">{html_lib.escape(uploaded_file.name.split('.')[-1].upper())}</span>
+            <span class="meta">{uploaded_file.size / 1024:,.1f} KB</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
 #    col1, col2 = st.columns([2, 1])
 
 #    with col1:
@@ -109,8 +144,8 @@ if uploaded_file:
     # -------------------------------
     left, right = st.columns([1, 1])
 
-    with left:
-        st.subheader("📄 Uploaded Document")
+    with left, st.container(border=True):
+        st.markdown('<div class="panel-title">📄 Uploaded Document</div>', unsafe_allow_html=True)
 
         file_type = uploaded_file.name.split(".")[-1].lower()
 
@@ -154,29 +189,28 @@ if uploaded_file:
             html = result.value
 
             components.html(
-                html,
+                f"<div style=\"font-family:Georgia,serif;line-height:1.65;padding:12px 16px;color:#1f2937\">{html}</div>",
                 height=700,
                 scrolling=True,
             )
 
-    with right:
-        st.subheader("📜 Extracted Text")
-        st.text_area("Document Content", text, height=700)
+    with right, st.container(border=True):
+        st.markdown('<div class="panel-title">📜 Extracted Text</div>', unsafe_allow_html=True)
+        st.text_area("Document Content", text, height=700, label_visibility="collapsed")
 
 
+    # Document stats section
+    word_count = len(text.split())
+    sentence_count = len(re.findall(r"[.!?]+(?:\s|$)", text))
+    reading_minutes = max(1, round(word_count / 200))
 
-    #Document stats section
-    st.divider()
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("📝 Words", f"{word_count:,}")
+    c2.metric("🔤 Characters", f"{len(text):,}")
+    c3.metric("📃 Sentences", f"{sentence_count:,}")
+    c4.metric("⏱️ Reading time", f"{reading_minutes} min")
 
-    st.subheader("📊 Quick Statistics")
-
-    c1, c2 = st.columns(2)
-
-    with c1:
-        st.metric("Words", len(text.split()))
-
-    with c2:
-        st.metric("Characters", len(text))
+    st.write("")
 
 
 
@@ -187,9 +221,10 @@ if uploaded_file:
 
     # SUMMARY
     with tab1:
-        if st.button("🧠 Generate Smart Summary"):
+        if st.button("🧠 Generate Smart Summary", type="primary"):
             summary = summarize_text(text, nlp)
-            st.write(summary)
+            with st.container(border=True):
+                st.markdown(summary)
 
     # ENTITIES
 #    with tab2:
@@ -220,18 +255,30 @@ if uploaded_file:
     # KEYWORDS
     with tab3:
         keywords = extract_keywords(text)
-        st.write(", ".join(keywords))
+        st.markdown(
+            '<div class="chips">'
+            + "".join(
+                f'<span class="chip" style="background:#eef2ff;color:#3730a3;border-color:#c7d2fe;'
+                f'font-size:0.95rem;padding:0.3rem 0.9rem">{html_lib.escape(str(k))}</span>'
+                for k in keywords
+            )
+            + "</div>",
+            unsafe_allow_html=True,
+        )
 
     # QA
     with tab4:
-        question = st.text_input("Type your question")
+        question = st.text_input(
+            "Type your question",
+            placeholder="e.g. What is the notice period for termination?",
+        )
         if question:
             answer = simple_qa(text, question)
             st.write(answer)
 
     # DOCUMENT CLASSIFICATION
     with tab5:
-        if st.button("📂 Classify Document"):
+        if st.button("📂 Classify Document", type="primary"):
             category, scores = classify_document(text)
             st.success(f"Detected Document Type: **{category}**")
             st.subheader("Confidence Scores")
@@ -242,7 +289,7 @@ if uploaded_file:
 
     # KEY INSIGHTS
     with tab6:
-        if st.button("💡 Generate Key Insights"):
+        if st.button("💡 Generate Key Insights", type="primary"):
 
             insights = extract_key_insights(text)
 
@@ -303,7 +350,7 @@ if uploaded_file:
 
             cols = st.columns(len(type_counts))
             for col, (kind, n) in zip(cols, type_counts.items()):
-                col.metric(f"{icons[kind]} {kind}s", n)
+                col.metric(f"{icons[kind]} {kind.replace('Responsibility', 'Responsibilitie')}s", n)
 
             groups = group_by_party(items)
 
@@ -332,7 +379,7 @@ if uploaded_file:
                     if not of_kind:
                         continue
 
-                    st.markdown(f"**{icons[kind]} {kind}s**")
+                    st.markdown(f"**{icons[kind]} {kind.replace('Responsibility', 'Responsibilitie')}s**")
 
                     for i in of_kind:
                         line = f"- {i['action'][:1].upper() + i['action'][1:]}"
@@ -397,4 +444,19 @@ if uploaded_file:
             )
 
 else:
-    st.info("👆 Upload a document to begin analysis")
+    st.markdown(
+        """
+        <div class="features">
+            <div class="feature"><div class="icon">⚖️</div><div class="ft">Clause extraction</div>
+                <div class="fd">Finds termination, payment, liability, confidentiality and other key clauses.</div></div>
+            <div class="feature"><div class="icon">📋</div><div class="ft">Obligations &amp; rights</div>
+                <div class="fd">Shows who must, may or must not do what, with deadlines and conditions.</div></div>
+            <div class="feature"><div class="icon">🚨</div><div class="ft">Risk analysis</div>
+                <div class="fd">Flags risky wording and missing protections, with a 0-100 risk score.</div></div>
+            <div class="feature"><div class="icon">❓</div><div class="ft">Ask your document</div>
+                <div class="fd">Ask a question and get the most relevant passages back.</div></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.caption("👆 Upload a PDF, DOCX or image above to begin. Your file is processed locally.")
