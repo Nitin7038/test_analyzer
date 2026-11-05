@@ -12,9 +12,11 @@ from Key_insights import extract_key_insights
 from clauses import extract_clauses, summarize_clauses
 from obligations import extract_obligations, group_by_party, count_by_type
 from risks import analyze_risks, risk_score, risk_level, count_by_severity
+from financials import extract_financial_terms, total_contract_value, count_by_category, format_money
 import plotly.express as px
 
 import base64
+import csv
 import html as html_lib
 import re
 from pathlib import Path
@@ -63,6 +65,12 @@ def cached_extract_obligations(text):
 @st.cache_data
 def cached_analyze_risks(text):
     return analyze_risks(text)
+
+
+@st.cache_data
+def cached_financial_terms(text):
+    terms = extract_financial_terms(text)
+    return terms, total_contract_value(terms, text)
 
 
 # -------------------------------
@@ -214,9 +222,9 @@ if uploaded_file:
 
 
 
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs(
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs(
         ["📌 Summary", "🏷️ Entities", "🔑 Keywords", "❓ Q&A", "📂 Document Type", "💡 Key Insights",
-         "⚖️ Clauses", "📋 Obligations & Rights", "🚨 Risk Analysis"]
+         "⚖️ Clauses", "📋 Obligations & Rights", "🚨 Risk Analysis", "💰 Financial Terms"]
     )
 
     # SUMMARY
@@ -441,6 +449,88 @@ if uploaded_file:
             st.caption(
                 "Automated keyword-based screening. It can miss risks or flag harmless wording, "
                 "so it is not a substitute for review by a qualified lawyer."
+            )
+
+    # FINANCIAL TERMS
+    with tab10:
+        fin_terms, fin_totals = cached_financial_terms(text)
+
+        if not fin_terms:
+            st.info("No amounts, fees, penalties or interest rates detected in this document.")
+        else:
+            cat_counts = count_by_category(fin_terms)
+
+            # headline cards: total value per currency, then counts
+            cards = [
+                (f"💰 Total contract value ({cur})", format_money(info["total"], cur),
+                 "Stated in contract" if info["basis"] == "Stated" else "Estimated")
+                for cur, info in fin_totals.items()
+            ][:2]
+            if not cards:
+                cards.append(("💰 Total contract value", "Not found", "No fees or price detected"))
+            cards += [
+                ("🧾 Financial terms", str(len(fin_terms)), None),
+                ("⚠️ Penalties", str(cat_counts.get("Penalty", 0)), None),
+                ("📈 Interest / late fees", str(cat_counts.get("Interest", 0)), None),
+            ]
+            for col, (label, value, note) in zip(st.columns(len(cards)), cards):
+                col.metric(label, value, note, delta_color="off")
+
+            for cur, info in fin_totals.items():
+                with st.expander(f"How the {cur} total was calculated ({info['basis'].lower()})"):
+                    for label, value in info["components"]:
+                        st.markdown(f"- {label}: **{format_money(value, cur)}**")
+                    for note in info["notes"]:
+                        st.caption(note)
+
+            chosen_cats = st.multiselect(
+                "Filter by category",
+                options=list(cat_counts.keys()),
+                default=list(cat_counts.keys()),
+                format_func=lambda c: f"{c} ({cat_counts[c]})",
+                key="fin_cats",
+            )
+
+            rows = [
+                {
+                    "Category": t["category"],
+                    "Amount": t["amount"],
+                    "Frequency": t["frequency"] or "-",
+                    "Due / Timing": t["timing"] or "-",
+                    "Payer": t["payer"] or "-",
+                    "Section": t["section"] or "-",
+                    "Clause text": t["sentence"],
+                }
+                for t in fin_terms
+                if t["category"] in chosen_cats
+            ]
+
+            st.dataframe(
+                rows,
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "Clause text": st.column_config.TextColumn(width="large"),
+                    "Amount": st.column_config.TextColumn(width="small"),
+                },
+            )
+
+            csv_buf = io.StringIO()
+            if rows:
+                writer = csv.DictWriter(csv_buf, fieldnames=list(rows[0].keys()))
+                writer.writeheader()
+                writer.writerows(rows)
+            st.download_button(
+                "⬇️ Download as CSV",
+                data=csv_buf.getvalue().encode("utf-8-sig"),
+                file_name="financial_terms.csv",
+                mime="text/csv",
+                disabled=not rows,
+            )
+
+            st.caption(
+                "Amounts are found by pattern matching. Check the source clause before relying on a figure, "
+                "especially estimated totals."
             )
 
 else:
