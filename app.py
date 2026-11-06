@@ -13,6 +13,7 @@ from clauses import extract_clauses, summarize_clauses
 from obligations import extract_obligations, group_by_party, count_by_type
 from risks import analyze_risks, risk_score, risk_level, count_by_severity
 from financials import extract_financial_terms, total_contract_value, count_by_category, format_money
+from explainer import explain_clauses, average_scores, reading_level
 import plotly.express as px
 
 import base64
@@ -71,6 +72,11 @@ def cached_analyze_risks(text):
 def cached_financial_terms(text):
     terms = extract_financial_terms(text)
     return terms, total_contract_value(terms, text)
+
+
+@st.cache_data
+def cached_explain_clauses(text):
+    return explain_clauses(text)
 
 
 # -------------------------------
@@ -187,7 +193,7 @@ if uploaded_file:
             components.html(html, height=720)
 
         elif file_type in ["png", "jpg", "jpeg"]:
-            st.image(uploaded_file, use_container_width=True)
+            st.image(uploaded_file, width="stretch")
 
         elif file_type == "docx":
 
@@ -222,9 +228,10 @@ if uploaded_file:
 
 
 
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs(
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs(
         ["📌 Summary", "🏷️ Entities", "🔑 Keywords", "❓ Q&A", "📂 Document Type", "💡 Key Insights",
-         "⚖️ Clauses", "📋 Obligations & Rights", "🚨 Risk Analysis", "💰 Financial Terms"]
+         "⚖️ Clauses", "📋 Obligations & Rights", "🚨 Risk Analysis", "💰 Financial Terms",
+         "🗣️ Plain English"]
     )
 
     # SUMMARY
@@ -531,6 +538,65 @@ if uploaded_file:
             st.caption(
                 "Amounts are found by pattern matching. Check the source clause before relying on a figure, "
                 "especially estimated totals."
+            )
+
+    # PLAIN-ENGLISH EXPLAINER
+    with tab11:
+        explained = cached_explain_clauses(text)
+
+        if not explained:
+            st.info("No clauses found to explain in this document.")
+        else:
+            score_before, score_after = average_scores(explained)
+
+            m1, m2, m3 = st.columns(3)
+            m1.metric("🗣️ Clauses explained", len(explained))
+            m2.metric("📕 Original readability", f"{score_before:g}/100", reading_level(score_before), delta_color="off")
+            m3.metric("📗 Plain-English readability", f"{score_after:g}/100", reading_level(score_after), delta_color="off")
+
+            type_counts_plain = {}
+            for c in explained:
+                type_counts_plain[c["type"]] = type_counts_plain.get(c["type"], 0) + 1
+
+            chosen_plain = st.multiselect(
+                "Filter by clause type",
+                options=list(type_counts_plain.keys()),
+                default=list(type_counts_plain.keys()),
+                format_func=lambda t: f"{t} ({type_counts_plain[t]})",
+                key="plain_types",
+            )
+
+            def md_escape(s):
+                # a pair of "$" in a clause would otherwise render as a LaTeX formula
+                return s.replace("$", "\\$")
+
+            for c in explained:
+                if c["type"] not in chosen_plain:
+                    continue
+
+                title = c["type"]
+                if c["heading"] and c["heading"].lower() != c["type"].lower():
+                    title += f" — {c['heading'].title() if c['heading'].isupper() else c['heading']}"
+
+                with st.expander(title):
+                    st.info(c["meaning"])
+
+                    plain_col, original_col = st.columns(2)
+                    with plain_col:
+                        st.markdown("**In plain English**")
+                        st.markdown("\n".join(f"- {md_escape(p)}" for p in c["points"]))
+                    with original_col:
+                        st.markdown("**Original wording**")
+                        st.markdown(f"> {md_escape(c['original'])}")
+
+                    if c["terms"]:
+                        st.markdown("**Legal terms explained**")
+                        st.markdown("\n".join(f"- **{t}:** {d}" for t, d in c["terms"]))
+
+            st.caption(
+                "Rewritten automatically with word-substitution rules, to help you read the contract. "
+                "Sentences keep the original figures, but the original wording is what legally counts. "
+                "This is not legal advice."
             )
 
 else:

@@ -95,7 +95,7 @@ RISK_RULES = [
     ("non_compete", "Restrictive Covenants", "High", "Non-compete / exclusivity",
      r"non-?compet\w+|shall not (?:directly or indirectly )?compete|"
      r"shall not (?:directly or indirectly )?(?:engage|carry on)[^.]{0,80}(?:business|competing)|"
-     r"exclusiv(?:e|ity)[^.]{0,40}(?:supplier|provider|dealer|basis|arrangement)",
+     r"(?<!non-)exclusiv(?:e|ity)[^.]{0,40}(?:supplier|provider|dealer|basis|arrangement)",
      "Restricts your ability to work with others or run your own business. Enforceability varies by jurisdiction.",
      "Narrow the scope, geography and duration, or remove it."),
 

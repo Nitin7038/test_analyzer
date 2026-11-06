@@ -68,7 +68,7 @@ CLAUSE_TYPES = {
     "Non-Compete / Non-Solicit": {
         "importance": "High",
         "patterns": [r"non-?compet\w+", r"non-?solicit\w*", r"restrictive covenant",
-                     r"exclusivity", r"shall not (?:compete|solicit)"],
+                     r"(?<!non-)exclusivity", r"shall not (?:compete|solicit)"],
     },
     "Force Majeure": {
         "importance": "Medium",
@@ -115,7 +115,8 @@ MIN_SCORE = 3
 HEADING_RE = re.compile(
     r"^\s*(?:"
     r"(?:ARTICLE|SECTION|CLAUSE|PART|SCHEDULE|ANNEXURE|APPENDIX|EXHIBIT)\s+[A-Z0-9IVXLC]+\b[.:\-)]?"
-    r"|\d+[.)]"                     # "12." / "12)"  (top-level only, not 12.1)
+    r"|\d+(?:\.\d+)+[.)]?"           # "12.1" / "12.1."
+    r"|\d+[.)]"                     # "12." / "12)"
     r")\s*(?P<rest>.*)$",
     re.I,
 )
