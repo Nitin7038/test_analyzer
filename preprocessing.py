@@ -3,9 +3,11 @@ import re
 
 
 def remove_non_printable(text):
+    # Tabs and no-break / thin spaces are not "printable" but still separate words.
     return "".join(
-        ch for ch in text
-        if ch.isprintable() or ch == "\n"
+        ch if ch.isprintable() or ch == "\n" else " "
+        for ch in text
+        if ch.isprintable() or ch.isspace()
     )
 
 
@@ -65,7 +67,8 @@ def preprocess_text(text):
 
     text = remove_non_printable(text)
     text = remove_page_numbers(text)
-    text = remove_duplicate_lines(text)
+    # Watermarks first: they are found by counting repeats, which deduplication removes.
     text = remove_watermarks(text)
+    text = remove_duplicate_lines(text)
 
     return text

@@ -9,8 +9,8 @@ streamlit==1.55.0
 plotly==6.6.0                  # imported by app.py
 
 # --- Document reading ---
-pdfplumber==0.11.9             # PDF text extraction (utils.py)
-PyMuPDF==1.28.0                # PDF page preview (imported as "fitz")
+pdfplumber==0.11.9             # only used by utils_bkp.py
+PyMuPDF==1.28.0                # PDF text extraction and page preview (imported as "fitz")
 python-docx==1.2.0             # DOCX text extraction (imported as "docx")
 mammoth==1.12.0                # DOCX preview as HTML
 pillow==11.3.0                 # image loading for OCR
@@ -35,7 +35,7 @@ en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_
 # ---------------------------------------------------------------------------
 # NOT installable with pip - install these separately:
 #
-# 1. Tesseract OCR program (required only to read PNG/JPG images; PDFs and DOCX work without it)
+# 1. Tesseract OCR program (required to read PNG/JPG images and scanned PDFs; text PDFs and DOCX work without it)
 #      Windows: https://github.com/UB-Mannheim/tesseract/wiki
 #               then add its folder (e.g. C:\Program Files\Tesseract-OCR) to PATH
 #      macOS:   brew install tesseract

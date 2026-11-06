@@ -53,6 +53,12 @@ nlp = load_model()
 warm_up()
 
 
+@st.cache_data(show_spinner=False)
+def cached_pdf_text(data):
+    # Streamlit reruns this script on every click; OCR must not run again each time.
+    return extract_text_from_pdf(data)
+
+
 @st.cache_data
 def cached_extract_clauses(text):
     return extract_clauses(text)
@@ -110,11 +116,12 @@ uploaded_file = st.file_uploader(
 if uploaded_file:
 
     with st.spinner("🔍 Extracting text..."):
-        file_type = uploaded_file.name.split(".")[-1]
+        file_type = uploaded_file.name.split(".")[-1].lower()
         text = ""
+        extraction_notes = []
 
         if file_type == "pdf":
-            text = extract_text_from_pdf(uploaded_file)
+            text, extraction_notes = cached_pdf_text(uploaded_file.getvalue())
 
         elif file_type == "docx":
             text = extract_text_from_docx(uploaded_file)
@@ -127,6 +134,13 @@ if uploaded_file:
 
     # Final normalization
     text = clean_text(text)
+
+    for note in extraction_notes:
+        st.warning(note)
+
+    if not text:
+        st.error("No readable text was found in this file, so there is nothing to analyze.")
+        st.stop()
 
     st.markdown(
         f"""
