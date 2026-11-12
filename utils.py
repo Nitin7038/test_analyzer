@@ -5,8 +5,9 @@ from collections import Counter
 
 import docx
 import fitz  # PyMuPDF
-import pytesseract
 from PIL import Image
+# pytesseract is imported inside the OCR functions: it takes ~1.5s to import and is only
+# needed for scanned pages/images, so importing it here would slow app startup.
 
 HEADER_FOOTER_BAND = 0.1      # top/bottom share of the page searched for running headers/footers
 MIN_PAGE_CHARS = 25           # a page with an image and less text than this is treated as scanned
@@ -78,6 +79,7 @@ def _native_lines(page):
 
 def _ocr_lines(page):
     """OCR a scanned page into the same line format, in page coordinates (points)."""
+    import pytesseract
     pix = page.get_pixmap(dpi=OCR_DPI, colorspace=fitz.csRGB, alpha=False)
     image = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
     data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
@@ -301,6 +303,7 @@ def extract_text_from_pdf(data):
             chars = sum(len(l["text"]) for l in lines)
 
             if chars < MIN_PAGE_CHARS and page.get_images():
+                import pytesseract
                 try:
                     lines = _ocr_lines(page)
                     ocr_pages.append(page.number + 1)
@@ -332,5 +335,6 @@ def extract_text_from_docx(file):
     return "\n".join([para.text for para in doc.paragraphs])
 
 def ocr_image(file):
+    import pytesseract
     image = Image.open(file)
     return pytesseract.image_to_string(image)

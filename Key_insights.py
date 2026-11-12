@@ -1,7 +1,15 @@
 import re
-import spacy
 
-nlp = spacy.load("en_core_web_sm")
+# Loaded on first use rather than at import time, so it doesn't slow app startup.
+_nlp = None
+
+
+def _get_nlp():
+    global _nlp
+    if _nlp is None:
+        import spacy
+        _nlp = spacy.load("en_core_web_sm")
+    return _nlp
 
 IMPORTANT_KEYWORDS = [
 
@@ -29,6 +37,7 @@ IMPORTANT_KEYWORDS = [
 
 def extract_key_insights(text):
 
+    nlp = _get_nlp()
     doc = nlp(text)
 
     scored_sentences = []

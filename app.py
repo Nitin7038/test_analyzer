@@ -1,12 +1,12 @@
 import streamlit as st
 import streamlit.components.v1 as components
-import spacy
 
 from utils import *
 from summary import summarize_text
 from entities2 import extract_entities
 from keywords import extract_keywords
-from qa2 import simple_qa, warm_up
+from qa2 import simple_qa, warm_up as warm_up_qa
+from nlp_model import get_nlp, warm_up as warm_up_nlp
 from classifier import classify_document
 from Key_insights import extract_key_insights
 from clauses import extract_clauses, summarize_clauses
@@ -43,15 +43,10 @@ st.markdown(
 # -------------------------------
 # LOAD NLP MODEL
 # -------------------------------
-@st.cache_resource
-def load_model():
-    #return spacy.load("en_core_web_sm")
-    return spacy.load("en_core_web_md")
-
-nlp = load_model()
-
-# load the Q&A embedding model in the background so the first question isn't slow
-warm_up()
+# Load the spaCy and Q&A models in background threads so the page renders immediately;
+# get_nlp() / the Q&A model wait for the load only if they are needed before it finishes.
+warm_up_nlp()
+warm_up_qa()
 
 
 @st.cache_data(show_spinner=False)
@@ -248,7 +243,7 @@ if uploaded_file:
     export_findings = cached_analyze_risks(text)
 
     def report_blocks():
-        summary = summarize_text(text, nlp)
+        summary = summarize_text(text, get_nlp())
         return build_blocks(uploaded_file.name, summary, export_clauses, export_items, export_findings)
 
     report_stem = Path(uploaded_file.name).stem
@@ -288,13 +283,13 @@ if uploaded_file:
     # SUMMARY
     with tab1:
         if st.button("🧠 Generate Smart Summary", type="primary"):
-            summary = summarize_text(text, nlp)
+            summary = summarize_text(text, get_nlp())
             with st.container(border=True):
                 st.markdown(summary)
 
     # ENTITIES
 #    with tab2:
-#        entities = extract_entities(text, nlp)
+#        entities = extract_entities(text, get_nlp())
 
 #        grouped = {}
 #        for ent, label in entities:
@@ -308,7 +303,7 @@ if uploaded_file:
 
     with tab2:
 
-        entities = extract_entities(text, nlp)
+        entities = extract_entities(text, get_nlp())
 
         for category, values in entities.items():
 
