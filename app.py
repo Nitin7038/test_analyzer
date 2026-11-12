@@ -14,6 +14,7 @@ from obligations import extract_obligations, group_by_party, count_by_type
 from risks import analyze_risks, risk_score, risk_level, count_by_severity
 from financials import extract_financial_terms, total_contract_value, count_by_category, format_money
 from explainer import explain_clauses, average_scores, reading_level
+from report import build_blocks, render_pdf, render_docx
 import plotly.express as px
 
 import base64
@@ -240,6 +241,42 @@ if uploaded_file:
 
     st.write("")
 
+    # EXPORT REPORT
+    # always the complete analysis; the filters inside the tabs don't apply here
+    export_clauses = cached_extract_clauses(text)
+    export_items = cached_extract_obligations(text)
+    export_findings = cached_analyze_risks(text)
+
+    def report_blocks():
+        summary = summarize_text(text, nlp)
+        return build_blocks(uploaded_file.name, summary, export_clauses, export_items, export_findings)
+
+    report_stem = Path(uploaded_file.name).stem
+
+    with st.container(border=True):
+        st.markdown('<div class="panel-title">📥 Export Report</div>', unsafe_allow_html=True)
+        st.caption("Download the summary, clauses, risks and obligations as one file.")
+
+        # callable data: the file is only built when a button is clicked
+        d1, d2 = st.columns(2)
+        d1.download_button(
+            "⬇️ Download PDF",
+            data=lambda: render_pdf(report_blocks()),
+            file_name=f"{report_stem}_report.pdf",
+            mime="application/pdf",
+            on_click="ignore",
+            width="stretch",
+        )
+        d2.download_button(
+            "⬇️ Download Word",
+            data=lambda: render_docx(report_blocks()),
+            file_name=f"{report_stem}_report.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            on_click="ignore",
+            width="stretch",
+        )
+
+    st.write("")
 
 
     tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs(
