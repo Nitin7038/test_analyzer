@@ -14,7 +14,7 @@ from obligations import extract_obligations, group_by_party, count_by_type
 from risks import analyze_risks, risk_score, risk_level, count_by_severity
 from financials import extract_financial_terms, total_contract_value, count_by_category, format_money
 from explainer import explain_clauses, average_scores, reading_level
-from report import build_blocks, render_pdf, render_docx
+from report import build_blocks, render_pdf, render_docx, render_xlsx
 import plotly.express as px
 
 import base64
@@ -26,7 +26,9 @@ import mammoth
 import fitz  # PyMuPDF
 from PIL import Image
 import io
+import time
 from preprocessing import preprocess_text
+from streamlit import runtime
 
 
 # -------------------------------
@@ -47,6 +49,42 @@ st.markdown(
 # get_nlp() / the Q&A model wait for the load only if they are needed before it finishes.
 warm_up_nlp()
 warm_up_qa()
+
+
+def _rename_pending_download(build, file_name):
+    """Change the file name of the deferred download whose callable is `build`.
+
+    Streamlit fixes a download's file name when the button is drawn, but reads it again
+    only after the callable has built the file, so renaming here sets the name at click time.
+    This uses Streamlit internals (checked against streamlit 1.55.0); if they change, it
+    does nothing and the name keeps the timestamp from when the page was drawn.
+    """
+    try:
+        manager = runtime.get_instance().media_file_mgr
+        with manager._lock:
+            for entry in manager._deferred_callables.values():
+                if entry["callable"] is build:
+                    entry["filename"] = file_name
+    except Exception:
+        pass
+
+
+def report_download_button(column, label, render, stem, extension, mime):
+    """A report download whose file name ends with the Unix time of the click,
+    e.g. contract_report_1763112345.pdf. The file is only built when the button is clicked."""
+    def build():
+        data = render()
+        _rename_pending_download(build, f"{stem}_report_{int(time.time())}.{extension}")
+        return data
+
+    column.download_button(
+        label,
+        data=build,
+        file_name=f"{stem}_report_{int(time.time())}.{extension}",  # fallback: page draw time
+        mime=mime,
+        on_click="ignore",
+        width="stretch",
+    )
 
 
 @st.cache_data(show_spinner=False)
@@ -250,25 +288,27 @@ if uploaded_file:
 
     with st.container(border=True):
         st.markdown('<div class="panel-title">📥 Export Report</div>', unsafe_allow_html=True)
-        st.caption("Download the summary, clauses, risks and obligations as one file.")
+        st.caption("Download the summary, clauses, risks and obligations as one file. "
+                   "The Excel file has one sortable table per section.")
 
-        # callable data: the file is only built when a button is clicked
-        d1, d2 = st.columns(2)
-        d1.download_button(
-            "⬇️ Download PDF",
-            data=lambda: render_pdf(report_blocks()),
-            file_name=f"{report_stem}_report.pdf",
-            mime="application/pdf",
-            on_click="ignore",
-            width="stretch",
+        d1, d2, d3 = st.columns(3)
+        report_download_button(
+            d1, "⬇️ Download PDF", lambda: render_pdf(report_blocks()),
+            report_stem, "pdf", "application/pdf",
         )
-        d2.download_button(
-            "⬇️ Download Word",
-            data=lambda: render_docx(report_blocks()),
-            file_name=f"{report_stem}_report.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            on_click="ignore",
-            width="stretch",
+        report_download_button(
+            d2, "⬇️ Download Word", lambda: render_docx(report_blocks()),
+            report_stem, "docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+        report_download_button(
+            d3, "⬇️ Download Excel",
+            lambda: render_xlsx(
+                uploaded_file.name, summarize_text(text, get_nlp()),
+                export_clauses, export_items, export_findings,
+            ),
+            report_stem, "xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
     st.write("")

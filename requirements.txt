@@ -13,6 +13,7 @@ pdfplumber==0.11.9             # only used by utils_bkp.py
 PyMuPDF==1.28.0                # PDF text extraction and page preview (imported as "fitz")
 python-docx==1.2.0             # DOCX text extraction (imported as "docx")
 mammoth==1.12.0                # DOCX preview as HTML
+openpyxl==3.1.5                # Excel (.xlsx) report export
 pillow==11.3.0                 # image loading for OCR
 pytesseract==0.3.13            # Python wrapper for OCR - needs the Tesseract program, see below
 

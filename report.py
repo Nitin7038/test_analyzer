@@ -1,11 +1,12 @@
 """
 report.py
 
-Export Report: the summary, clauses, risks and obligations as one PDF or Word file.
+Export Report: the summary, clauses, risks and obligations as one PDF, Word or Excel file.
 
 build_blocks() decides what the report says, as a flat list of (kind, content) blocks.
 render_pdf() and render_docx() only decide how a block looks, so the two formats
-always contain the same text.
+always contain the same text. render_xlsx() works from the analysis data instead,
+as one table per section, since a spreadsheet is for sorting and filtering.
 
 Block kinds: title, meta, h1, h2, h3, p, bullet, quote, note.
 Content is a string, or a list of (text, is_bold) runs for mixed formatting.
@@ -22,6 +23,9 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 
 from clauses import summarize_clauses
 from obligations import group_by_party, count_by_type
@@ -356,4 +360,152 @@ def render_docx(blocks):
 
     buffer = io.BytesIO()
     document.save(buffer)
+    return buffer.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Excel
+# ---------------------------------------------------------------------------
+# A spreadsheet is for sorting and filtering, so this renders the analysis as tables
+# (one sheet per section) instead of the flowing blocks used by the PDF and Word files.
+
+XLSX_MAX_CELL = 32767         # Excel's limit on characters in one cell
+XLSX_HEADER_FILL = PatternFill("solid", fgColor="3730A3")
+XLSX_HEADER_FONT = Font(bold=True, color="FFFFFF")
+XLSX_WRAP = Alignment(wrap_text=True, vertical="top")
+SEVERITY_FILLS = {
+    "High": PatternFill("solid", fgColor="FECACA"),
+    "Medium": PatternFill("solid", fgColor="FDE68A"),
+    "Low": PatternFill("solid", fgColor="D1FAE5"),
+}
+
+
+def _cell_value(value):
+    if isinstance(value, (int, float)) or value is None:
+        return value
+    if isinstance(value, (list, tuple)):
+        value = ", ".join(str(v) for v in value)
+    text = _clean(value)
+    return text[:XLSX_MAX_CELL - 1] + "…" if len(text) > XLSX_MAX_CELL else text
+
+
+def _set(cell, value):
+    cell.value = _cell_value(value)
+    if isinstance(cell.value, str) and cell.value.startswith("="):
+        cell.data_type = "s"          # document text, never a formula
+
+
+def _table_sheet(workbook, title, columns, rows, empty_message):
+    """columns: [(header, width)]. rows: lists of values in column order."""
+    sheet = workbook.create_sheet(title)
+    if not rows:
+        _set(sheet["A1"], empty_message)
+        sheet.column_dimensions["A"].width = 80
+        return sheet
+
+    for col, (header, width) in enumerate(columns, start=1):
+        cell = sheet.cell(row=1, column=col, value=header)
+        cell.fill = XLSX_HEADER_FILL
+        cell.font = XLSX_HEADER_FONT
+        cell.alignment = XLSX_WRAP
+        sheet.column_dimensions[get_column_letter(col)].width = width
+
+    for r, values in enumerate(rows, start=2):
+        for col, value in enumerate(values, start=1):
+            cell = sheet.cell(row=r, column=col)
+            _set(cell, value)
+            cell.alignment = XLSX_WRAP
+
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = sheet.dimensions
+    return sheet
+
+
+def _overview_sheet(sheet, filename, summary, clauses, items, findings):
+    sheet.title = "Overview"
+    sheet.column_dimensions["A"].width = 24
+    sheet.column_dimensions["B"].width = 100
+
+    def add(label="", value="", bold=False, size=None, color=None):
+        sheet.append([None, None])
+        row = sheet.max_row
+        _set(sheet.cell(row=row, column=1), label)
+        _set(sheet.cell(row=row, column=2), value)
+        sheet.cell(row=row, column=1).font = Font(bold=True, size=size, color=color)
+        sheet.cell(row=row, column=2).font = Font(bold=bold, color=color)
+        sheet.cell(row=row, column=2).alignment = XLSX_WRAP
+        sheet.cell(row=row, column=1).alignment = Alignment(vertical="top")
+
+    sheet["A1"] = REPORT_TITLE
+    sheet["A1"].font = Font(bold=True, size=18, color="3730A3")
+    add()
+    add("Source file", filename)
+    add("Generated", f"{datetime.now():%d %B %Y}")
+    add("Note", DISCLAIMER, color="6B7280")
+
+    add()
+    add("At a glance", size=13, color="3730A3")
+    if findings:
+        score = risk_score(findings)
+        counts = count_by_severity(findings)
+        add("Overall risk", f"{score}/100 ({risk_level(score)})", bold=True)
+        add("Risks found", f"High: {counts['High']} · Medium: {counts['Medium']} · Low: {counts['Low']}")
+    else:
+        add("Overall risk", "No significant legal risks detected.")
+    add("Clauses found", f"{len(clauses)} across {len(summarize_clauses(clauses))} types" if clauses else 0)
+    if items:
+        add("Obligations & rights",
+            " · ".join(f"{PLURALS[kind]}: {n}" for kind, n in count_by_type(items).items()))
+    else:
+        add("Obligations & rights", 0)
+
+    add()
+    add("Summary", size=13, color="3730A3")
+    for kind, content in _summary_blocks(summary):
+        text = "".join(t for t, _ in _runs(content))
+        if kind == "h2":
+            add(value=text, bold=True)
+        else:
+            add(value=f"• {text}" if kind == "bullet" else text)
+
+
+def render_xlsx(filename, summary, clauses, items, findings):
+    workbook = Workbook()
+    workbook.properties.title = REPORT_TITLE
+    _overview_sheet(workbook.active, filename, summary, clauses, items, findings)
+
+    clause_sheet = _table_sheet(
+        workbook, "Clauses",
+        [("Type", 22), ("Heading", 28), ("Importance", 12), ("Confidence", 12),
+         ("Key terms", 30), ("Also touches on", 24), ("Text", 90)],
+        [[c["type"], c["heading"], c["importance"], c["confidence"],
+          c["key_terms"], c["also"], c["text"]] for c in clauses],
+        "No legal clauses detected in this document.",
+    )
+    for row in clause_sheet.iter_rows(min_row=2, min_col=4, max_col=4):
+        row[0].number_format = "0%"
+
+    risk_sheet = _table_sheet(
+        workbook, "Risks",
+        [("Severity", 11), ("Title", 32), ("Section", 22), ("Category", 18), ("Kind", 16),
+         ("Excerpt", 60), ("Why it matters", 50), ("Suggested fix", 50)],
+        [[f["severity"], f["title"], f["section"], f["category"], f["kind"],
+          f["excerpt"], f["why"], f["recommendation"]] for f in findings],
+        "No significant legal risks detected.",
+    )
+    for row in risk_sheet.iter_rows(min_row=2, max_col=1):
+        if row[0].value in SEVERITY_FILLS:
+            row[0].fill = SEVERITY_FILLS[row[0].value]
+
+    _table_sheet(
+        workbook, "Obligations",
+        [("Party", 22), ("Type", 16), ("Action", 70), ("Deadline", 22),
+         ("Condition", 36), ("Section", 22)],
+        [[party, i["type"], i["action"], i["deadline"], i["condition"], i["section"]]
+         for party, party_items in group_by_party(items).items() for i in party_items],
+        "No obligations, rights or responsibilities detected in this document.",
+    )
+
+    buffer = io.BytesIO()
+    workbook.save(buffer)
     return buffer.getvalue()
